@@ -35,7 +35,11 @@ Settings g_settings = {
     .reverb = true,
     .movie_audio = true,
     .motion = true,
+#ifdef __ANDROID__
+    .shadows = false,  // Default shadows off on Android for smooth framerate on mobile GPUs
+#else
     .shadows = true,
+#endif
 #ifdef __ANDROID__
     .show_fps = true,  // (the performance overlay, ui/perf_overlay.mm: on until turned off in the menu)
     .touch_controls = true,
@@ -65,8 +69,7 @@ Settings g_settings = {
     .upscaler = UPSCALE_SGSR1,  // (one pass: ~1 ms on the Adreno 830 to 2560x1440, FSR 1's two ~2.7 ms; 40 fps against 38)
     .native_code = false,       // (an experiment: runtime/native.c)
     .sync_lag = true,           // (a few more fps; the CPU's reads of GPU results a frame old: nvn/objects.c nvnSyncWait)
-    .out_lines = OUT_AUTO,      // (POCO F7 Ultra, 3200x1440, 1.8.2's Great Plateau: GPU 22.8 ms a frame at the screen's,
-                                // 18.6 at 1080 lines with a larger scene - the final image's passes over 2.2x the pixels)
+    .out_lines = 720,           // (720 lines: matches Nintendo Switch handheld mode; prevents thermal throttling)
 #else
     .upscaler = UPSCALE_SHARP,  // (MetalFX on macOS, AMD FSR 1 on Windows)
 #endif

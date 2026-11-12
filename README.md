@@ -3,7 +3,27 @@
 **English** | [Português](README.pt-BR.md)
 
 > [!TIP]
-> **Huawei / HiSilicon Kirin Optimization:** This fork is optimized for Huawei devices featuring Kirin processors and in-house Maleoon / Mali GPUs (such as the Huawei nova 16s with Kirin 8020 / Maleoon 920). It adds explicit Huawei Vulkan vendor detection (`0x19E5`), hardware ASTC 4x4 texture compression, pipeline cache limiting to prevent driver crashes, and tuned resolution defaults.
+> **Huawei / HiSilicon Kirin Optimization:** This fork is optimized for Huawei and Honor devices featuring Kirin processors and in-house Maleoon / Mali GPUs (such as the Huawei nova 16s with Kirin 8020 / Maleoon 920).
+>
+> ### Key Optimizations in this Fork:
+> - **ADPF Error Loop Fix:** Disables unsupported Android ADPF calls on EMUI / HarmonyOS to prevent the 2,400+ `EINVAL (22)` error storm that throttled Kirin CPU clocks to 749 MHz.
+> - **CPU Core Pinning:** Automatically pins the main game thread, Switch guest threads, and the Vulkan render thread to Big / Super cores (Cores 4..7) with SELinux fallback support, preventing execution on slow efficiency cores (Core 0).
+> - **Weapon Switch Stutter Elimination:** Disabled aggressive pipeline eviction (`pipe_evict`) that previously purged compiled shader pipelines every 30 seconds. Weapon and effect pipelines now stay in memory permanently, completely eliminating the 2.8-second freeze when equipping or switching weapons.
+> - **Sync Lag Stability:** Fixed the world settlement timer (`LAG_SETTLE`) so opening quick-select weapon wheels, menus, or inventories does not deactivate Sync Lag or lock the CPU into a 48% GPU wait loop.
+> - **In-Game Shadow Toggle:** Added a **Shadows (On/Off)** toggle under `Settings > Video` to bypass shadow depth passes on tile-based mobile GPUs.
+> - **Tuned Handheld Defaults:** Defaults output resolution to 720p (matching Nintendo Switch handheld mode) with Snapdragon GSR 1 upscaling and 50% internal scene resolution for low thermal footprint.
+>
+> ### Recommended Settings for Stable 30 FPS on Huawei:
+> | Setting | Recommended Value | Reason |
+> | :--- | :--- | :--- |
+> | **Frame rate** | **30 fps** | Avoids the engine's 20 FPS drop lock on momentary stutters |
+> | **Output resolution** | **720p** | Matches Switch handheld mode, cutting post-processing fillrate |
+> | **Internal resolution** | **50%** (or 75%) | Renders 3D scene at ~540p with negligible visual loss on mobile |
+> | **Upscaler** | **Snapdragon GSR 1** | Fast single-pass reconstruction to screen resolution at ~0 GPU cost |
+> | **Shadows** | **Off** | Bypasses shadow map depth comparisons, boosting open-world FPS |
+> | **Anti-aliasing** | **Off** or **FXAA** | Saves GPU bandwidth over heavy SMAA |
+>
+> *Tip: Remove thick protective phone cases and avoid playing while fast-charging to prevent EMUI hardware thermal throttling (`Thermal: severe`).*
 
 [![Listed on PlayPorted](https://playported.com/badge.svg)](https://playported.com/ports/754-the-legend-of-zelda-breath-of-the-wild/)
 
