@@ -1,10 +1,9 @@
-# BOTWRecompAndroid
+# BOTWRecompAndroid (Huawei / Kirin Edition)
 
 **English** | [Português](README.pt-BR.md)
 
-> [!NOTE]
-> **Project update (through November 13, 2026):** Replies to issues will be slower this week. Version 0.3.4 is a small
-> hotfix to the RAM setting; larger updates remain on hold. [Read the announcement](https://github.com/mamcjr/BOTWRecompAndroid/discussions/329).
+> [!TIP]
+> **Huawei / HiSilicon Kirin Optimization:** This fork is optimized for Huawei devices featuring Kirin processors and in-house Maleoon / Mali GPUs (such as the Huawei nova 16s with Kirin 8020 / Maleoon 920). It adds explicit Huawei Vulkan vendor detection (`0x19E5`), hardware ASTC 4x4 texture compression, pipeline cache limiting to prevent driver crashes, and tuned resolution defaults.
 
 [![Listed on PlayPorted](https://playported.com/badge.svg)](https://playported.com/ports/754-the-legend-of-zelda-breath-of-the-wild/)
 

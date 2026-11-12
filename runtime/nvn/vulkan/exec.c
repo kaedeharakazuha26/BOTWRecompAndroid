@@ -13,6 +13,7 @@
 #include <unistd.h>
 #ifdef __ANDROID__
 #include <sys/mman.h>
+#include <sys/resource.h>
 #endif
 
 #include "../../hle.h"
@@ -1163,6 +1164,9 @@ static pthread_cond_t jobs_cond = PTHREAD_COND_INITIALIZER;
 
 static void *worker(void *a) {
     (void)a;
+#ifdef __ANDROID__
+    setpriority(PRIO_PROCESS, 0, -4);
+#endif
     for (;;) {
         pthread_mutex_lock(&jobs_lock);
         while (!jobs_head) pthread_cond_wait(&jobs_cond, &jobs_lock);
@@ -1947,12 +1951,10 @@ static void begin_pass(void) {
         extern bool vk_async_on(void);
         static long chunk = -1;
         if (chunk < 0) {
-            // (not on Qualcomm's driver: its render thread is slow - ~12 ms a frame in the copy mode - so the GPU sat
-            // idle between the chunks, and the game, timing its frames on the GPU from start to end, saw the gaps as
-            // GPU time and stayed at 30 even indoors; a whole frame at once, it chose 60 there)
+            // (not on Qualcomm's driver or Huawei Maleoon: its render thread is slow in chunk mode - GPU sat idle)
             extern bool vk_driver_is_qualcomm(void);
             const char *e = getenv("LARECOMP_VK_CHUNK_US");
-            chunk = e ? atol(e) : vk_driver_is_qualcomm() ? 0 : 2000;
+            chunk = e ? atol(e) : (vk_driver_is_qualcomm() || vk_is_huawei()) ? 0 : 2000;
         }
         extern int vk_ab(const char *what);
         long ch = chunk > 0 && AB("chunk") == 1 ? 500 : chunk;
@@ -3030,7 +3032,8 @@ static int pipe_keep(void) {
     if (keep < 0) {
         extern bool vk_low_ram(void);
         const char *e = getenv("LARECOMP_PIPE_KEEP");
-        keep = e ? atoi(e) : (g_vk.props.vendorID == 0x13B5 || vk_low_ram()) ? 1500 : 0;
+        // On Kirin Maleoon (12GB+ RAM), never evict pipelines: destroying them after 30s forces expensive re-compilations (2.8s hitches) on weapon switches.
+        keep = e ? atoi(e) : (vk_low_ram() || (g_vk.props.vendorID == 0x13B5 && !strstr(g_vk.props.deviceName, "Maleoon"))) ? 1500 : 0;
         if (keep > 0) LOG("[vk] pipelines kept: at most %d (the least recently used ones destroyed)\n", keep);
     }
     return keep;
@@ -8028,10 +8031,10 @@ int vk_ab(const char *what) {
 static void split_long_pass(void) {
 #ifdef __ANDROID__
     static long split = -1;
-    if (split < 0) {  // (3 ms by default; not on Qualcomm's driver, as LARECOMP_VK_CHUNK_US)
+    if (split < 0) {  // (3 ms by default; not on Qualcomm or Huawei Maleoon tile-based GPUs)
         extern bool vk_driver_is_qualcomm(void);
         const char *e = getenv("LARECOMP_VK_SPLIT_US");
-        split = e ? atol(e) : vk_driver_is_qualcomm() ? 0 : 3000;
+        split = e ? atol(e) : (vk_driver_is_qualcomm() || vk_is_huawei()) ? 0 : 3000;
     }
     extern bool vk_async_on(void);
     static unsigned n;  // (the clock every 32 draws: a clock read per draw showed up in the profile)

@@ -16,6 +16,8 @@ build/
 /cache/
 save/
 /larecomp.ini
+*.apk
+/tmp_release/
 # tools and Python environments (machine-specific)
 tools/venv/
 venv/

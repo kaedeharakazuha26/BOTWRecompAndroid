@@ -666,6 +666,8 @@ static void tab_display(void) {
                "Smooths jagged edges of the game image before it is scaled to the window. SMAA: finds the edges and "
                "blends only along them, so textures stay sharp. FXAA: a single, cheaper pass that also softens the image "
                "a little. Most useful at a lower internal resolution.");
+    opt_toggle("Shadows", &g_settings.shadows, true,
+               "Draws dynamic world and character shadows. Turn off to significantly boost framerate in the open world on mobile GPUs.");
 #ifdef __ANDROID__
     opt_toggle("Sync lag", &g_settings.sync_lag, true,
                "The game starts its next frame while the GPU still finishes the last one: a few more fps. What the game reads "

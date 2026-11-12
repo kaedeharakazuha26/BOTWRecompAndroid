@@ -35,6 +35,7 @@ Settings g_settings = {
     .reverb = true,
     .movie_audio = true,
     .motion = true,
+    .shadows = true,
 #ifdef __ANDROID__
     .show_fps = true,  // (the performance overlay, ui/perf_overlay.mm: on until turned off in the menu)
     .touch_controls = true,
@@ -56,8 +57,7 @@ Settings g_settings = {
     .turnip_lrz = -1,
     .event_fps_unlock = false,  // (some events count frames: hle/framepace.c in_event)
     .fps_mode = 1,  // (30: the game's own choice dropped the overworld to 20, where the GPU's clocks settled low)
-    .res_mode = 1,  // (1x: the Switch's 900p scene, the HUD at the screen's resolution - Match display drew the scene at
-                    // 2560x1440 on the POCO F7 Ultra: 22 fps)
+    .res_mode = RES_Q50, // (Default to 50% internal scene resolution for high framerate, upscaled to display)
 #else
     .show_fps = false,
 #endif
@@ -208,6 +208,7 @@ void settings_reset_defaults(void) {
     g_settings.upscaler = d->upscaler;
     g_settings.out_lines = d->out_lines;
     g_settings.antialias = d->antialias;
+    g_settings.shadows = d->shadows;
     g_settings.volume = d->volume;
     g_settings.reverb = d->reverb;
     g_settings.movie_audio = d->movie_audio;
@@ -335,6 +336,7 @@ void settings_load(void) {
             g_settings.out_lines = n == 1080 || n == 900 || n == 720 ? n : g_defaults.out_lines;
         }
         else if (!strcmp(key, "antialias")) g_settings.antialias = !strcmp(val, "off") ? AA_OFF : !strcmp(val, "fxaa") ? AA_FXAA : AA_SMAA;
+        else if (!strcmp(key, "shadows")) g_settings.shadows = !strcmp(val, "false") || !strcmp(val, "0") || !strcmp(val, "off") ? false : true;
         else if (!strcmp(key, "language")) {  // ("auto" or one of the game's codes; anything else: auto)
             g_settings.language = LANG_AUTO;
             const char *v = !strcmp(val, "zh-CN") ? "zh-Hans" : !strcmp(val, "zh-TW") ? "zh-Hant" : val;  // (saved before #15)
@@ -406,6 +408,7 @@ void settings_save(void) {
     if (g_settings.out_lines > 0) fprintf(f, "output = %d\n", g_settings.out_lines);
     else fprintf(f, "output = %s\n", g_settings.out_lines == OUT_AUTO ? "auto" : "screen");
     fprintf(f, "antialias = %s\n", g_settings.antialias == AA_SMAA ? "smaa" : g_settings.antialias == AA_FXAA ? "fxaa" : "off");
+    fprintf(f, "shadows = %s\n", g_settings.shadows ? "true" : "false");
     if (g_settings.res_mode == RES_DYNAMIC) fprintf(f, "resolution = dynamic\n");
     else if (g_settings.res_mode == RES_Q75) fprintf(f, "resolution = 75%%\n");
     else if (g_settings.res_mode == RES_Q25) fprintf(f, "resolution = 25%%\n");

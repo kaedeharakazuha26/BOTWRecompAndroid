@@ -81,6 +81,7 @@ typedef struct {
     float stick_deadzone;  // a controller's sticks: a round dead zone (share of the travel, 0-0.4), rescaled past it
                            // (hle/input.c): worn sticks that drift. 0: the game's own only
 #endif
+    bool shadows;        // dynamic world and character shadows
     int language;        // LANG_AUTO or an index into g_language_codes: the game's text language
     bool aspect_asked;   // the start screen's one-time "authentic 16:9 or unlocked?" question was answered
     bool menu_tip_seen;  // the start screen's one-time "how to open the menu" note was shown (first PLAY ever)

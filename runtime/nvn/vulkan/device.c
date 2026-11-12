@@ -460,6 +460,10 @@ void vk_device_fault_report(void) {
 static bool display_timing;
 #endif
 
+bool vk_is_huawei(void) {
+    return g_vk.props.vendorID == 0x19E5 || (g_vk.props.deviceName && strstr(g_vk.props.deviceName, "Maleoon"));
+}
+
 static void create_device(void) {
     uint32_t ne = 0;
     vkEnumerateDeviceExtensionProperties(g_vk.phys, NULL, &ne, NULL);
@@ -544,15 +548,17 @@ static void create_device(void) {
     // and older) already go through CPU copies, and keep the arena. Driver compatibility's "Game memory on the GPU" =
     // Off (gpu_heap 0) also leaves the import off on any driver but Turnip (whose Off is the placed heap's alone).
     bool mali = g_vk.props.vendorID == 0x13B5;
+    bool huawei = g_vk.props.vendorID == 0x19E5 || strstr(g_vk.props.deviceName, "Maleoon");
     if (g_vk.host_import) {
         const char *e = getenv("LARECOMP_VK_HOST_IMPORT");
         bool xclipse = strstr(g_vk.props.deviceName, "Xclipse") || g_vk.props.vendorID == 0x144D;  // (Samsung)
         bool by_setting = g_settings.gpu_heap == 0 && !vk_driver_is_turnip();
-        if (mali && !e) setenv("LARECOMP_VK_NO_GRES", "1", 0);
-        if (e ? !atoi(e) : xclipse || mali || by_setting) {
+        if ((mali || huawei) && !e) setenv("LARECOMP_VK_NO_GRES", "1", 0);
+        if (e ? !atoi(e) : xclipse || mali || huawei || by_setting) {
             g_vk.host_import = false;
             LOG("[vk] guest heap import left off (%s)\n", e ? "LARECOMP_VK_HOST_IMPORT=0" :
                 xclipse ? "Xclipse: its first submission fails" :
+                huawei ? "Huawei Maleoon: safe memory path" :
                 mali ? "Mali: the game's text went missing, and memory ran out" : "settings: game memory on the GPU off");
         }
     }
@@ -2182,10 +2188,10 @@ int ui_run(void) {
             static uint64_t last;
             static size_t saved;
             uint64_t now = SDL_GetTicks();
-            if (g_vk.dev && now - last > 30000 && !getenv("LARECOMP_VK_NO_PIPELINE_CACHE")) {
+            if (g_vk.dev && now - last > 5000 && !getenv("LARECOMP_VK_NO_PIPELINE_CACHE")) {
                 last = now;
                 size_t sz = 0;
-                if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, NULL) == VK_SUCCESS && sz > saved + 65536) {
+                if (vkGetPipelineCacheData(g_vk.dev, g_vk.pcache, &sz, NULL) == VK_SUCCESS && sz > saved + 4096) {
                     vk_pipeline_cache_save();
                     saved = sz;
                     LOG("[vk] pipeline cache saved (%zu KB)\n", sz >> 10);

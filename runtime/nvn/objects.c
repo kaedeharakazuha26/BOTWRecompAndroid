@@ -322,13 +322,17 @@ NVN(nvnSyncWait) {  // NVN_SYNC_WAIT_RESULT_ALREADY_SIGNALED
     // (2026-10-28, POCO F7 Ultra; issue #43 on an Adreno 740) - the water's colour taken once, while loading, from a GPU
     // result the lag made a frame old. So each load (the save, a fast travel) runs its first seconds without it.
     if (lag > 0 && env_lag < 0) {
-        enum { LAG_SETTLE = 300 };
+        enum { LAG_SETTLE = 30 };
         extern uint64_t vk_scene_frame(void), renderer_present_count(void);
         static uint64_t world_since;
         uint64_t now = renderer_present_count(), seen = vk_scene_frame();
-        bool world = !framepace_on_title() && seen && (now - seen < 20 || framepace_in_menu());
-        if (!world) world_since = 0;
-        else if (!world_since) world_since = now;
+        // Only reset settle timer during full loading screens (where the 3D scene stops for > 180 frames) or title screen.
+        // Quick menus, weapon wheels and inventory should NEVER disable sync lag or trigger a 300-frame GPU wait stall.
+        if (framepace_on_title() || (seen && now > seen && now - seen > 180)) {
+            world_since = 0;
+        } else if (seen && !world_since) {
+            world_since = now;
+        }
         if (!world_since || now - world_since < LAG_SETTLE) lag = 0;
     }
     extern int vk_ab(const char *what);

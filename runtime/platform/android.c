@@ -23,6 +23,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/system_properties.h>
 #include <sys/ucontext.h>
 #include <time.h>
 #include <unistd.h>
@@ -843,6 +844,19 @@ typedef struct APerformanceHintSession APerformanceHintSession;
 static cpu_set_t g_all_cores;
 static bool g_pinned;
 
+static bool is_huawei_or_honor(void) {
+    static int res = -1;
+    if (res >= 0) return res != 0;
+    char mfg[96] = {0}, soc[96] = {0}, brand[96] = {0};
+    __system_property_get("ro.product.manufacturer", mfg);
+    __system_property_get("ro.product.brand", brand);
+    __system_property_get("ro.board.platform", soc);
+    res = (strcasestr(mfg, "huawei") || strcasestr(mfg, "honor") ||
+           strcasestr(brand, "huawei") || strcasestr(brand, "honor") ||
+           strcasestr(soc, "kirin") || strcasestr(soc, "hi36") || strcasestr(soc, "hi62")) ? 1 : 0;
+    return res != 0;
+}
+
 // LARECOMP_UCLAMP_MIN=<1-1024> (a test, issue #41): a utilization floor for every thread that starts here (the game's,
 // the render thread, audio), so the governor runs their cores at least at that share of their top clock, however
 // briefly each thread works. On a Snapdragon 8 Gen 3 (MagicOS) the game's busiest core stayed at ~600 MHz in the open
@@ -854,7 +868,12 @@ static void uclamp_min_thread(void) {
     static int want = -1;
     if (want < 0) {
         const char *e = getenv("LARECOMP_UCLAMP_MIN");
-        want = e && atoi(e) > 0 ? (atoi(e) > 1024 ? 1024 : atoi(e)) : 0;
+        if (e && atoi(e) > 0) {
+            want = atoi(e) > 1024 ? 1024 : atoi(e);
+        } else {
+            // Huawei / Kirin & MagicOS power governors leave cores downclocked at ~600 MHz without a utilization clamp floor.
+            want = is_huawei_or_honor() ? 600 : 0;
+        }
     }
     if (!want) return;
     struct {
@@ -879,7 +898,7 @@ static void uclamp_min_thread(void) {
 void plat_render_thread_pin(void) {
     const char *e = getenv("LARECOMP_RENDER_BIG");
     extern bool vk_low_ram(void);
-    if (e ? !atoi(e) : !vk_low_ram()) return;
+    if (e ? !atoi(e) : (!vk_low_ram() && !is_huawei_or_honor())) return;
     long best = 0, mhz[64] = {0};
     int n = 0;
     for (int c = 0; c < 64; c++) {
@@ -900,12 +919,32 @@ void plat_render_thread_pin(void) {
             CPU_SET(c, &set);
             k++;
         }
-    if (!best || k == 0 || k == n) return;
+    if (!best || k == 0 || k == n) {
+        // Fallback when /sys/ is blocked by SELinux: pin to big cores (upper half of online CPUs)
+        int ncpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        if (ncpus >= 4) {
+            CPU_ZERO(&set);
+            int start = ncpus >= 8 ? 4 : ncpus / 2;
+            for (int c = start; c < ncpus; c++) CPU_SET(c, &set);
+            int r = sched_setaffinity(0, sizeof set, &set);
+            LOG("[android] render thread pinned to big cores %d..%d (SELinux fallback): %s\n", start, ncpus - 1, r ? strerror(errno) : "ok");
+        }
+        return;
+    }
     int r = sched_setaffinity(0, sizeof set, &set);
     LOG("[android] render thread on the %d fastest cores (%ld MHz): %s\n", k, best / 1000, r ? strerror(errno) : "ok");
 }
 
 void plat_thread_unpin(void) {
+    if (is_huawei_or_honor()) {
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        int ncpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        int start = ncpus >= 8 ? 4 : (ncpus >= 4 ? 2 : 0);
+        for (int c = start; c < ncpus; c++) CPU_SET(c, &set);
+        sched_setaffinity(0, sizeof set, &set);
+        return;
+    }
     if (g_pinned) sched_setaffinity(0, sizeof g_all_cores, &g_all_cores);
     uclamp_min_thread();
 }
@@ -932,7 +971,18 @@ static void pin_to_fastest_cores(void) {
             CPU_SET(c, &set);
             k++;
         }
-    if (!best || k == 0 || k == n) return;  // (one cluster: nothing to pick)
+    if (!best || k == 0 || k == n) {
+        // Fallback when /sys/ is blocked by SELinux: pin to big cores (upper half of online CPUs)
+        int ncpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        if (ncpus >= 4) {
+            CPU_ZERO(&set);
+            int start = ncpus >= 8 ? 4 : ncpus / 2;
+            for (int c = start; c < ncpus; c++) CPU_SET(c, &set);
+            int r = sched_setaffinity(0, sizeof set, &set);
+            LOG("[android] render thread pinned to big cores %d..%d (SELinux fallback): %s\n", start, ncpus - 1, r ? strerror(errno) : "ok");
+        }
+        return;
+    }  // (one cluster: nothing to pick)
     if (sched_getaffinity(0, sizeof g_all_cores, &g_all_cores)) return;
     g_pinned = true;  // (before: a thread started from here from now on goes back to g_all_cores)
     int r = sched_setaffinity(0, sizeof set, &set);
@@ -971,7 +1021,7 @@ static void adpf_work_locked(int slot, uint64_t work_ns, uint64_t target_ns, uin
     static AWorkDuration *wd;
     if (loaded < 0 || state[slot] < 0) return;
     if (!loaded) {
-        if (getenv("LARECOMP_NO_ADPF")) { loaded = -2; return; }
+        if (getenv("LARECOMP_NO_ADPF") || is_huawei_or_honor()) { loaded = -2; return; }
         loaded = -1;
         void *lib = dlopen("libandroid.so", RTLD_NOW);
         if (!lib) return;
@@ -1144,7 +1194,20 @@ static void adpf_work(int slot, uint64_t work_ns, uint64_t target_ns, uint64_t g
     pthread_mutex_unlock(&adpf_lock);
 }
 
-void plat_frame_work(uint64_t work_ns, uint64_t target_ns) { adpf_work(0, work_ns, target_ns, 0, work_ns); }
+void plat_frame_work(uint64_t work_ns, uint64_t target_ns) {
+    static bool game_pinned = false;
+    if (!game_pinned && is_huawei_or_honor()) {
+        game_pinned = true;
+        cpu_set_t set;
+        CPU_ZERO(&set);
+        int ncpus = (int)sysconf(_SC_NPROCESSORS_ONLN);
+        int start = ncpus >= 8 ? 4 : (ncpus >= 4 ? 2 : 0);
+        for (int c = start; c < ncpus; c++) CPU_SET(c, &set);
+        int r = sched_setaffinity(0, sizeof set, &set);
+        LOG("[android] game thread pinned to big cores %d..%d: %s\n", start, ncpus - 1, r ? strerror(errno) : "ok");
+    }
+    adpf_work(0, work_ns, target_ns, 0, work_ns);
+}
 void plat_frame_work_gpu(uint64_t cpu_ns, uint64_t gpu_ns, uint64_t target_ns, uint64_t game_ns) {
     adpf_work(0, cpu_ns, target_ns, gpu_ns, game_ns);
 }

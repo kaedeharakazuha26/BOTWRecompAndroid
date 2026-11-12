@@ -171,4 +171,5 @@ VkShaderModule vk_compile_glsl(const char *src, int stage, const char *name);  /
 VkShaderModule vk_builtin_shader(const char *name);  // internal shaders (clear, copy, present)
 
 // ---- device / window (device.c)
+bool vk_is_huawei(void);
 void vk_save_png(const char *path, const uint8_t *rgba, uint32_t w, uint32_t h);

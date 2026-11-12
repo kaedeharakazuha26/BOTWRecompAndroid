@@ -10,6 +10,7 @@
 #include "vk.h"
 #include "../astc.h"
 #include "../renderer.h"
+#include "../settings.h"
 #include "../texpatch.h"
 
 // ================================================================== formats
@@ -170,7 +171,9 @@ static bool format_supports(VkFormat f, VkFormatFeatureFlags want) {
 // images left unwritten: colored 4x4 garbage on every BC texture (a Mali-G615, 2026-10-17).
 #define BCDEC_STATIC
 #define BCDEC_IMPLEMENTATION
-#define BCDEC_BC4BC5_PRECISE  // (signed BC4 / BC5: the game's normal maps)
+#ifndef __ANDROID__
+#define BCDEC_BC4BC5_PRECISE  // (signed BC4 / BC5: desktop only; fast bitshift on Android)
+#endif
 #include "../bcdec.h"
 #include "../bc1_astc.h"
 
@@ -223,10 +226,15 @@ static void bc_decode(VkFormat bc, const uint8_t *blocks, uint32_t wb, uint32_t 
             case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: case VK_FORMAT_BC1_RGBA_SRGB_BLOCK: bcdec_bc1(b, o, pitch); break;
             case VK_FORMAT_BC2_UNORM_BLOCK: case VK_FORMAT_BC2_SRGB_BLOCK: bcdec_bc2(b, o, pitch); break;
             case VK_FORMAT_BC3_UNORM_BLOCK: case VK_FORMAT_BC3_SRGB_BLOCK: bcdec_bc3(b, o, pitch); break;
+#ifdef BCDEC_BC4BC5_PRECISE
             case VK_FORMAT_BC4_UNORM_BLOCK: bcdec_bc4(b, o, pitch, 0); break;
             case VK_FORMAT_BC4_SNORM_BLOCK: bcdec_bc4(b, o, pitch, 1); break;
             case VK_FORMAT_BC5_UNORM_BLOCK: bcdec_bc5(b, o, pitch, 0); break;
             case VK_FORMAT_BC5_SNORM_BLOCK: bcdec_bc5(b, o, pitch, 1); break;
+#else
+            case VK_FORMAT_BC4_UNORM_BLOCK: case VK_FORMAT_BC4_SNORM_BLOCK: bcdec_bc4(b, o, pitch); break;
+            case VK_FORMAT_BC5_UNORM_BLOCK: case VK_FORMAT_BC5_SNORM_BLOCK: bcdec_bc5(b, o, pitch); break;
+#endif
             case VK_FORMAT_BC6H_UFLOAT_BLOCK: case VK_FORMAT_BC6H_SFLOAT_BLOCK: {  // (RGB halves -> RGBA, alpha 1)
                 uint16_t rgb[16 * 3];
                 bcdec_bc6h_half(b, rgb, 4 * 3, bc == VK_FORMAT_BC6H_SFLOAT_BLOCK);
@@ -492,7 +500,7 @@ static void create_image(NvnTexture *t, TexBackend *b) {
     static int rt_list = -1;
     if (rt_list < 0) {
         const char *e = getenv("LARECOMP_VK_RT_FORMAT_LIST");
-        rt_list = e ? atoi(e) != 0 : getenv("LARECOMP_VK_NO_MUTABLE") != NULL || g_vk.props.vendorID == 0x13B5;
+        rt_list = e ? atoi(e) != 0 : getenv("LARECOMP_VK_NO_MUTABLE") != NULL || g_vk.props.vendorID == 0x13B5 || g_vk.props.vendorID == 0x19E5 || strstr(g_vk.props.deviceName, "Maleoon");
         if (rt_list) LOG("[vk] render targets without mutable formats (their sRGB twin in a format list)\n");
     }
     VkFormat twin = vf == VK_FORMAT_R8G8B8A8_UNORM ? VK_FORMAT_R8G8B8A8_SRGB : vf == VK_FORMAT_R8G8B8A8_SRGB ? VK_FORMAT_R8G8B8A8_UNORM
@@ -1649,6 +1657,17 @@ static VkCompareOp compare_op(uint32_t f) {
 static VkSampler make_sampler(const NvnSamplerDesc *d, bool compare);
 
 VkSampler vk_sampler(NvnSamplerDesc *d) {
+    if (d->compare_mode) {
+        static struct { const NvnSamplerDesc *d; bool shadow; VkSampler s; } cache[64];
+        static int n, next;
+        bool shadow_on = g_settings.shadows && !getenv("LARECOMP_NO_SHADOW");
+        for (int i = 0; i < n; i++)
+            if (cache[i].d == d && cache[i].shadow == shadow_on) return cache[i].s;
+        VkSampler s = make_sampler(d, true);
+        int i = n < 64 ? n++ : next++ % 64;
+        cache[i].d = d; cache[i].shadow = shadow_on; cache[i].s = s;
+        return s;
+    }
     if (!d->backend) d->backend = (void *)make_sampler(d, true);
     return (VkSampler)d->backend;
 }
@@ -1740,7 +1759,7 @@ static VkSampler make_sampler(const NvnSamplerDesc *d, bool compare) {
     if (stest && mf > 1) { si.minLod = 0; si.maxLod = VK_LOD_CLAMP_NONE; si.anisotropyEnable = VK_TRUE; si.maxAnisotropy = 16; }
     if (d->compare_mode && compare) {
         si.compareEnable = VK_TRUE;
-        si.compareOp = getenv("LARECOMP_NO_SHADOW") ? VK_COMPARE_OP_ALWAYS : compare_op(d->compare_func);
+        si.compareOp = (!g_settings.shadows || getenv("LARECOMP_NO_SHADOW")) ? VK_COMPARE_OP_ALWAYS : compare_op(d->compare_func);
     }
     VkSamplerCustomBorderColorCreateInfoEXT cb = {.sType = VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT};
     if (border) {
